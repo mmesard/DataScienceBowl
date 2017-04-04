@@ -151,3 +151,76 @@ def normalize(image):
     image[image<0] = 0.
     return image
 
+
+#####
+# Standardize volumes by appropriately cropping too-large dimensions, and filling in too-small dimensions
+#####
+def standardize_volume(pixels, desiredPixelsCount=256, fillValue=0.0):
+    
+    # Crop down each dimension to maximum of desired size, if needed.
+
+    existingDims = pixels.shape    
+    newPixelRanges = []
+    
+    for existingDimLength in existingDims:
+        if existingDimLength > desiredPixelsCount:
+            pixelsToCut = existingDimLength - desiredPixelsCount
+            leftPixelsToCut = int(math.floor(pixelsToCut/2.0))
+            newPixelRange = tuple([leftPixelsToCut,leftPixelsToCut+desiredPixelsCount])
+        else:
+            newPixelRange = tuple([0,0+existingDimLength])
+        newPixelRanges.append(newPixelRange)
+        
+        
+    newPixels = pixels.copy()
+    newPixels = newPixels[newPixelRanges[0][0]:newPixelRanges[0][1],
+                          newPixelRanges[1][0]:newPixelRanges[1][1],
+                          newPixelRanges[2][0]:newPixelRanges[2][1]]     
+    # Now fill in any extra space needed if dimensions are short
+    revisedDims = newPixels.shape
+    
+    #print(revisedDims)
+    
+    additionalPixelCounts = []
+    
+    for existingDimLength in revisedDims:
+        if existingDimLength < desiredPixelsCount:
+            additionalPixelsTotal = desiredPixelsCount - existingDimLength
+            additionalPixelsLeft = int(math.floor(additionalPixelsTotal/2.0))
+            additionalPixelsRight = additionalPixelsTotal - additionalPixelsLeft
+            additionalPixelCounts.append(tuple([additionalPixelsLeft,additionalPixelsRight]))
+        else:
+            additionalPixelCounts.append(tuple([0,0]))
+            
+    #print(additionalPixelCounts)
+            
+    
+    for dimNum, additionalPixelCountTup in enumerate(additionalPixelCounts):
+        #print(dimNum)
+        # Add pixels to the beginning of this dimension (if necessary)
+        workingDims = newPixels.shape
+        if( additionalPixelCountTup[0] > 0 ):
+            pixelAdditionsLeftDims = [workingDims[0],workingDims[1],workingDims[2]]
+            pixelAdditionsLeftDims[dimNum] = additionalPixelCountTup[0]
+            pixelAdditionsLeft = np.ones(pixelAdditionsLeftDims)
+            pixelAdditionsLeft.fill(fillValue)
+            newPixels = np.concatenate([pixelAdditionsLeft,newPixels], axis=dimNum)
+        
+        # Add pixels to the end of this dimension (if necessary)
+        workingDims = newPixels.shape
+        if( additionalPixelCountTup[1] > 0 ):
+            pixelAdditionsRightDims =  [workingDims[0],workingDims[1],workingDims[2]]
+            pixelAdditionsRightDims[dimNum] = additionalPixelCountTup[1]
+            pixelAdditionsRight = np.ones(pixelAdditionsRightDims)
+            pixelAdditionsRight.fill(fillValue)
+            newPixels = np.concatenate([newPixels, pixelAdditionsRight], axis=dimNum)
+        
+        
+        #print(newPixels.shape)
+            
+        
+    return(newPixels)
+
+#####
+# End standardize dimensions
+#####
