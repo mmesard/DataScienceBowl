@@ -26,7 +26,7 @@ def preprocess_patient(path):
     segmentedLungMask = segment_lung_mask(pix_resampled, True)
     if np.mean(segmentedLungMask >= .1):
         rawMask = segmentedLungMask # if >=10% of image is retained with segmentation, let's presume the mask worked
-        dilatedMask = morphology.binary_dilation(image=rawMask)
+        dilatedMask = morphology.binary_dilation(image=rawMask) # <- EDIT THIS TO ALTER VERTICAL SPREADING OF MASK
     else:
         dilatedMask = np.ones(segmentedLungMask.shape, dtype=np.int8) # fall back to not masking anything if the segmentation isolated only a small portion
     
@@ -35,15 +35,30 @@ def preprocess_patient(path):
     normalizedPixels = normalize(pix_resampled)
     maskedPixels = normalizedPixels*dilatedMask
     
+    
+    scaleDown = True
+    
+    if (scaleDown):
+        # Now scale to half the size
+        scaledPixels = scipy.ndimage.interpolation.zoom(maskedPixels, 0.5, mode='nearest')
+    else:
+        # Do no scaling, we'll just crop to 128
+        scaledPixels = maskedPixels
+  
+    # Standardize the volume
+    croppedPixels = standardize_volume(scaledPixels, 128, 0.0)
+    
+
+    
     # Return the masked pixels, plus the spacing
-    return maskedPixels, spacing
+    return croppedPixels
 
 
 
 # Load the scans in given folder path
 def load_scan(path):
     slices = [dicom.read_file(path + '/' + s) for s in os.listdir(path)]
-    slices.sort(key = lambda x: int(x.InstanceNumber))
+    slices.sort(key = lambda x: float(x.ImagePositionPatient[2]))
     try:
         slice_thickness = np.abs(slices[0].ImagePositionPatient[2] - slices[1].ImagePositionPatient[2])
     except:
@@ -55,8 +70,8 @@ def load_scan(path):
     return slices
 
 
-def get_pixels_hu(scans):
-    image = np.stack([s.pixel_array for s in scans])
+def get_pixels_hu(slices):
+    image = np.stack([s.pixel_array for s in slices])
     # Convert to int16 (from sometimes int16), 
     # should be possible as values should always be low enough (<32k)
     image = image.astype(np.int16)
@@ -66,14 +81,16 @@ def get_pixels_hu(scans):
     image[image == -2000] = 0
     
     # Convert to Hounsfield units (HU)
-    intercept = scans[0].RescaleIntercept
-    slope = scans[0].RescaleSlope
-    
-    if slope != 1:
-        image = slope * image.astype(np.float64)
-        image = image.astype(np.int16)
+    for slice_number in range(len(slices)):
         
-    image += np.int16(intercept)
+        intercept = slices[slice_number].RescaleIntercept
+        slope = slices[slice_number].RescaleSlope
+        
+        if slope != 1:
+            image[slice_number] = slope * image[slice_number].astype(np.float64)
+            image[slice_number] = image[slice_number].astype(np.int16)
+            
+        image[slice_number] += np.int16(intercept)
     
     return np.array(image, dtype=np.int16)
 
@@ -89,7 +106,7 @@ def resample(image, scan, new_spacing=[1,1,1]):
     real_resize_factor = new_shape / image.shape
     new_spacing = spacing / real_resize_factor
     
-    image = scipy.ndimage.interpolation.zoom(image, real_resize_factor)
+    image = scipy.ndimage.interpolation.zoom(image, real_resize_factor, mode='nearest')
     
     return image, new_spacing
 
